@@ -65,8 +65,8 @@ export const SceneManager = ({ handsRef }) => {
     } 
     else if (s.phase === PHASES.CHARGE) {
         let currentZ = null;
+        let isTrackingLost = false;
 
-        // Verify hands are still somewhat together, or at least one hand is visible
         if (lPos && rPos) {
            const dx = lPos[0] - rPos[0];
            const dy = lPos[1] - rPos[1];
@@ -75,40 +75,40 @@ export const SceneManager = ({ handsRef }) => {
                s.phase = PHASES.SUMMON; // Pulled apart, cancel charge
                return;
            }
-           // Keep position locked between hands
            s.chargePosition = [ (lPos[0]+rPos[0])/2, (lPos[1]+rPos[1])/2, 0 ];
            currentZ = (lRawZ + rRawZ) / 2;
         } else if (lPos || rPos) {
-           // One hand dropped, use the remaining hand
            currentZ = lPos ? lRawZ : rRawZ;
         } else {
-           // Both hands lost
-           s.phase = PHASES.SUMMON; 
-           return;
+           // Both hands lost while in CHARGE! This happens exactly during a fast forward throw.
+           isTrackingLost = true;
         }
 
-        // PUSH DETECTION: Calculate delta from reference depth
-        if (currentZ !== null && s.referenceZ !== null) {
+        // AGGRESSIVE PUSH DETECTION
+        let triggeredThrow = false;
+
+        if (isTrackingLost) {
+            // Instant trigger on tracking loss
+            triggeredThrow = true;
+        } else if (currentZ !== null && s.referenceZ !== null) {
             const deltaZ = currentZ - s.referenceZ;
-            
-            // Aggressive Trigger: smaller negative numbers mean closer to camera in our setup.
-            // A delta of -0.015 is extremely sensitive and triggers immediately on a push.
-            if (deltaZ < -0.015) {
-                 // TRANSITION: Charge -> Galaxy
-                 s.phase = PHASES.GALAXY;
-                 
-                 // Lock to middle of screen
-                 s.galaxyPosition = [0, 0, 0];
-                 s.activeThrowHand = lPos ? "Left" : "Right";
-                 
-                 if (galaxyGroupRef.current) {
-                     galaxyGroupRef.current.userData.spawnTime = performance.now();
-                 }
+            // Immediate trigger on sharp forward motion
+            if (deltaZ < -0.01) {
+                 triggeredThrow = true;
             } else if (deltaZ > 0.03) {
-                 // If the user pulls their hand backward, update the reference Z 
-                 // so they can push forward again without having to reset to Summon.
-                 s.referenceZ = currentZ;
+                 s.referenceZ = currentZ; // Reset ref if they pull back
             }
+        }
+
+        if (triggeredThrow) {
+             s.phase = PHASES.GALAXY;
+             s.galaxyPosition = [0, 0, 0]; // Lock to center
+             s.activeThrowHand = lPos ? "Left" : "Right";
+             
+             if (galaxyGroupRef.current) {
+                 galaxyGroupRef.current.userData.spawnTime = performance.now();
+                 galaxyGroupRef.current.scale.set(0.1, 0.1, 0.1); // Reset scale for the Boom
+             }
         }
     }
     else if (s.phase === PHASES.GALAXY) {
