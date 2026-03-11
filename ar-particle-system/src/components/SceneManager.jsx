@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { LeftHandVisual } from './LeftHandVisual';
 import { RightHandVisual } from './RightHandVisual';
@@ -30,6 +30,25 @@ export const SceneManager = ({ handsRef }) => {
       referenceZ: null,
       activeThrowHand: null // "Left" or "Right"
   });
+
+  // MANUAL OVERRIDE: Spacebar triggers Galaxy directly
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.code === 'Space') {
+        const s = stateRef.current;
+        s.phase = PHASES.GALAXY;
+        s.galaxyPosition = [0, 0, 0]; // Lock to center and detach from hand
+        s.activeThrowHand = "Right"; // Arbitrary
+        
+        if (galaxyGroupRef.current) {
+            galaxyGroupRef.current.userData.spawnTime = performance.now();
+            galaxyGroupRef.current.scale.set(0.1, 0.1, 0.1); 
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   useFrame(() => {
     if (!handsRef.current) return;

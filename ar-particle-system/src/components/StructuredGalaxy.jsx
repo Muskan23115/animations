@@ -77,9 +77,9 @@ export const StructuredGalaxy = ({ parentRef }) => {
     const elapsed = (performance.now() - spawnTime) / 1000;
     
     // --- 1. FORCE THE SCALE (The Boom) ---
-    // Instantly explode from whatever core scale it was, up to MASSIVE 15x
-    if (parentRef.current.scale.x < 14.9) {
-        parentRef.current.scale.lerp(new THREE.Vector3(15, 15, 15), 0.1);
+    // Instantly explode from whatever core scale it was, up to MASSIVE 20x
+    if (parentRef.current.scale.x < 19.9) {
+        parentRef.current.scale.lerp(new THREE.Vector3(20, 20, 20), 0.05);
     }
 
     // --- 2. SCATTER THE PARTICLES (Sphere -> Galaxy Lerp) ---
