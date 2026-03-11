@@ -97,8 +97,8 @@ export const SceneManager = ({ handsRef }) => {
                  // TRANSITION: Charge -> Galaxy
                  s.phase = PHASES.GALAXY;
                  
-                 // Detonate exactly on the target (Merged Core's last position)
-                 s.galaxyPosition = [...s.chargePosition];
+                 // Lock to middle of screen
+                 s.galaxyPosition = [0, 0, 0];
                  s.activeThrowHand = lPos ? "Left" : "Right";
                  
                  if (galaxyGroupRef.current) {

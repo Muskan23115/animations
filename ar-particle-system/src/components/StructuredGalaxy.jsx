@@ -11,10 +11,10 @@ export const StructuredGalaxy = ({ parentRef }) => {
   const streakCount = 5000;
 
   // --- 1. Branching/Lightning Particle Streaks ---
-  const [streakColors, streakTargets, streakVel] = useMemo(() => {
+  const [streakColors, streakTargets, driftFactors] = useMemo(() => {
     const col = new Float32Array(streakCount * 3);
     const tgt = new Float32Array(streakCount * 3);
-    const vel = new Float32Array(streakCount * 3);
+    const drift = new Float32Array(streakCount);
     
     const colors = [
       new THREE.Color(2.0, 0.5, 3.0), // Deep purple/pink
@@ -30,7 +30,7 @@ export const StructuredGalaxy = ({ parentRef }) => {
         const branchAngle = (Math.PI * 2 / numBranches) * branchIdx;
         
         // Distance along branch (power random for dense core)
-        const r = Math.pow(Math.random(), 1.5) * 10.0; 
+        const r = Math.pow(Math.random(), 1.5) * 12.0; 
         
         // Jitter based on distance (fractal branching feel)
         const jitter = Math.max(0.1, r * 0.25);
@@ -49,145 +49,110 @@ export const StructuredGalaxy = ({ parentRef }) => {
         const c = colors[Math.floor(Math.random() * colors.length)];
         col[i*3] = c.r; col[i*3+1] = c.g; col[i*3+2] = c.b;
         
-        vel[i*3] = 0; vel[i*3+1] = 0; vel[i*3+2] = 0;
+        // Calculate drift potential for outer points
+        drift[i] = (r > 6.0) ? (Math.random() * 0.5 + 0.5) : 0;
     }
-    return [col, tgt, vel];
+    return [col, tgt, drift];
   }, []);
 
-  // Use empty pos array on mount, it populates on spawn
   const streakPos = useMemo(() => new Float32Array(streakCount * 3), []);
 
   // --- 2. Large Orbital Rings ---
   const ringGeo = useMemo(() => {
      return [
-       new THREE.TorusGeometry(3.5, 0.02, 16, 128),
-       new THREE.TorusGeometry(6.0, 0.015, 16, 150),
-       new THREE.TorusGeometry(8.5, 0.01, 16, 200)
+       new THREE.TorusGeometry(4.5, 0.02, 16, 128),
+       new THREE.TorusGeometry(7.0, 0.015, 16, 150),
+       new THREE.TorusGeometry(9.5, 0.01, 16, 200)
      ];
   }, []);
 
-  useFrame((state, delta) => {
+  useFrame(() => {
     if (!parentRef?.current?.visible) return;
     
-    const dt = Math.min(delta, 0.1); // Prevent physics explosions on lag
     const spawnTime = parentRef.current.userData.spawnTime || performance.now();
     const elapsed = (performance.now() - spawnTime) / 1000;
     
-    // --- INITIALIZATION (The Bomb) ---
-    // If a new spawn occurred, reset positions and inject massive explosion velocities
-    if (streaksRef.current && streaksRef.current.userData.lastSpawnTime !== spawnTime) {
-       streaksRef.current.userData.lastSpawnTime = spawnTime;
-       
-       const arr = streaksRef.current.geometry.attributes.position.array;
-       for (let i = 0; i < streakCount; i++) {
-            const i3 = i * 3;
-            
-            // All start exactly at the origin (center of the Merged Core)
-            arr[i3] = 0; arr[i3+1] = 0; arr[i3+2] = 0;
-            
-            // Calculate direction to target
-            const tx = streakTargets[i3], ty = streakTargets[i3+1], tz = streakTargets[i3+2];
-            const dist = Math.sqrt(tx*tx + ty*ty + tz*tz);
-            const nX = dist > 0 ? tx/dist : (Math.random()-0.5);
-            const nY = dist > 0 ? ty/dist : (Math.random()-0.5);
-            const nZ = dist > 0 ? tz/dist : (Math.random()-0.5);
-            
-            // Splash Force! Huge initial outward velocity
-            const burstForce = 30.0 + Math.random() * 60.0;
-            streakVel[i3] = nX * burstForce;
-            streakVel[i3+1] = nY * burstForce;
-            
-            // Z-Axis Pop! Explode violently forward toward the camera (+Z)
-            streakVel[i3+2] = nZ * burstForce + (20.0 + Math.random() * 40.0); 
-       }
-    }
+    // 1. The Expansion Tween (0 to massive over 1.5s)
+    const progress = Math.min(1.0, elapsed / 1.5);
+    // Smooth easing out (easeOutQuart)
+    const easeScale = 1 - Math.pow(1 - progress, 4); 
 
-    // --- PHYSICS (The Web) ---
+    // --- CONTINUOUS ANIMATION: Streaks ---
     if (streaksRef.current) {
+        // Slowly rotate entire particle group continuously
+        streaksRef.current.rotation.y += 0.002;
+        streaksRef.current.rotation.z -= 0.001;
+        
         const arr = streaksRef.current.geometry.attributes.position.array;
-        streaksRef.current.rotation.y = elapsed * 0.05; // slowly rotate over time
         
         for (let i = 0; i < streakCount; i++) {
             const i3 = i * 3;
             
-            // Apply velocity to position
-            arr[i3] += streakVel[i3] * dt;
-            arr[i3+1] += streakVel[i3+1] * dt;
-            arr[i3+2] += streakVel[i3+2] * dt;
+            const tx = streakTargets[i3];
+            const ty = streakTargets[i3+1];
+            const tz = streakTargets[i3+2];
+            
+            // Lingering Sparkles: outer particles bleed into space infinitely
+            const staticDrift = driftFactors[i];
+            const currentDrift = 1.0 + (staticDrift * elapsed * 0.15); // Expands slow and forever
+            
+            // Alive: slow sine-wave wobble 
+            const wx = Math.sin(elapsed * 2.0 + i) * 0.2;
+            const wy = Math.cos(elapsed * 1.5 + i) * 0.2;
+            const wz = Math.sin(elapsed * 1.8 + i) * 0.2;
 
-            // Apply extreme Drag/Friction
-            // High friction means they shoot fast but screech to a halt
-            const drag = 6.0; 
-            streakVel[i3] -= streakVel[i3] * drag * dt;
-            streakVel[i3+1] -= streakVel[i3+1] * drag * dt;
-            streakVel[i3+2] -= streakVel[i3+2] * drag * dt;
-
-            // Apply Structural Spring (Pull them into their final geometric Web)
-            const spring = 12.0; 
-            streakVel[i3] += (streakTargets[i3] - arr[i3]) * spring * dt;
-            streakVel[i3+1] += (streakTargets[i3+1] - arr[i3+1]) * spring * dt;
-            streakVel[i3+2] += (streakTargets[i3+2] - arr[i3+2]) * spring * dt;
+            // Apply base target * continuous drift * intro tween scale + living wobble!
+            arr[i3] = (tx * currentDrift + wx) * easeScale;
+            arr[i3+1] = (ty + wy) * easeScale;
+            arr[i3+2] = ((tz * currentDrift) + 5.0 + wz) * easeScale - 5.0; // Pops out in Z slightly as it scales
         }
         streaksRef.current.geometry.attributes.position.needsUpdate = true;
         
-        // Sparkle Trail Pulse
-        // Opacity spikes to 1.0 instantly, then decays down as they settle.
+        // Initial flash fade to base opacity
         const baseOpacity = 0.6;
-        const flashDecay = Math.max(0, Math.exp(-elapsed * 4.0)); // fast fade from 1.0
-        streaksRef.current.material.opacity = Math.min(1.0, baseOpacity + flashDecay);
-        // Pulse size slightly for an optical 'streak'
-        streaksRef.current.material.size = 0.04 + flashDecay * 0.08; 
+        const flashDecay = Math.max(0, Math.exp(-elapsed * 4.0)); // exponential fade from +1.0
+        streaksRef.current.material.opacity = Math.min(1.0, baseOpacity + flashDecay * 0.5);
+        streaksRef.current.material.size = 0.05 + Math.sin(elapsed * 3.0) * 0.01; // Global breathing size
     }
 
-    // --- RINGS ---
+    // --- CONTINUOUS ANIMATION: Rings ---
     if (ringsRef.current) {
-        // Explode outward fast, then elastic settle
-        let ringScale = Math.min(1.0, elapsed * 4.0);
-        if (elapsed > 0.25) {
-            // Slight elastic bounce at the end of the scale
-            ringScale = 1.0 + Math.sin((elapsed - 0.25) * Math.PI * 4) * Math.exp(-elapsed * 5) * 0.1;
-        }
-        ringsRef.current.scale.set(ringScale, ringScale, ringScale);
+        // Expand Rings smoothly
+        ringsRef.current.scale.set(easeScale, easeScale, easeScale);
         
-        ringsRef.current.rotation.x = Math.sin(elapsed * 0.4) * 0.2;
-        ringsRef.current.rotation.y = elapsed * 0.2;
-        ringsRef.current.rotation.z = Math.cos(elapsed * 0.3) * 0.2;
+        // Constant, living rotation
+        ringsRef.current.rotation.x += 0.001;
+        ringsRef.current.rotation.y += 0.003;
+        ringsRef.current.rotation.z -= 0.002;
         
-        // Flash geometry opacity
+        // Fade in
         ringsRef.current.children.forEach(child => {
             if (child.material) {
-                const baseOp = 0.4;
-                const flash = Math.max(0, Math.exp(-elapsed * 3.0));
-                child.material.opacity = Math.min(1.0, baseOp + flash);
+                child.material.opacity = Math.min(0.5, elapsed * 0.5);
             }
         });
     }
 
-    // --- TEXT DEBRIS ---
+    // --- CONTINUOUS ANIMATION: Text Debris ---
     if (textGroupRef.current) {
-        // Text shoots out, using same elastic scale
-        let tScale = Math.min(1.0, elapsed * 3.0);
-        if (elapsed > 0.33) {
-             tScale = 1.0 + Math.sin((elapsed - 0.33) * Math.PI * 3) * Math.exp(-elapsed * 4) * 0.2;
-        }
-        textGroupRef.current.scale.set(tScale, tScale, tScale);
-        textGroupRef.current.rotation.y = -elapsed * 0.15; 
+        textGroupRef.current.scale.set(easeScale, easeScale, easeScale);
         
-        // Deep Z spread for the text group overall to match the Z-Pop
-        textGroupRef.current.position.z = Math.max(0, 5.0 * Math.exp(-elapsed * 3.0));
+        // Constant, living rotation
+        textGroupRef.current.rotation.y -= 0.004; 
+        textGroupRef.current.rotation.x += 0.001; 
     }
   });
 
   return (
     <group>
-      {/* 1. True Physics Branching Particle Streaks */}
+      {/* 1. Alive Particle Streaks */}
       <points ref={streaksRef}>
         <bufferGeometry>
             <bufferAttribute attach="attributes-position" count={streakPos.length/3} array={streakPos} itemSize={3} />
             <bufferAttribute attach="attributes-color" count={streakColors.length/3} array={streakColors} itemSize={3} />
         </bufferGeometry>
         <pointsMaterial 
-          size={0.05} 
+          size={0.06} 
           vertexColors={true} 
           transparent={true}
           opacity={1.0} 
@@ -200,32 +165,28 @@ export const StructuredGalaxy = ({ parentRef }) => {
       {/* 2. Structured Orbital Rings */}
       <group ref={ringsRef}>
           <mesh geometry={ringGeo[0]} rotation={[Math.PI/3, 0, 0]}>
-              <meshBasicMaterial color={[1.5, 0.5, 2.0]} transparent opacity={0.6} blending={THREE.AdditiveBlending} toneMapped={false}/>
+              <meshBasicMaterial color={[1.5, 0.5, 2.0]} transparent opacity={0.5} blending={THREE.AdditiveBlending} toneMapped={false}/>
           </mesh>
           <mesh geometry={ringGeo[1]} rotation={[-Math.PI/5, Math.PI/4, 0]}>
-              <meshBasicMaterial color={[0.5, 1.5, 3.0]} transparent opacity={0.5} blending={THREE.AdditiveBlending} toneMapped={false}/>
+              <meshBasicMaterial color={[0.5, 1.5, 3.0]} transparent opacity={0.4} blending={THREE.AdditiveBlending} toneMapped={false}/>
           </mesh>
           <mesh geometry={ringGeo[2]} rotation={[Math.PI/6, -Math.PI/3, 0]}>
-              <meshBasicMaterial color={[2.0, 2.0, 3.0]} transparent opacity={0.4} blending={THREE.AdditiveBlending} toneMapped={false}/>
+              <meshBasicMaterial color={[2.0, 2.0, 3.0]} transparent opacity={0.3} blending={THREE.AdditiveBlending} toneMapped={false}/>
           </mesh>
       </group>
 
-      {/* 3. Floating Numbers/Text in Debris with Pop Scale */}
+      {/* 3. Floating Numbers/Text in Debris */}
       <group ref={textGroupRef}>
-          <Text position={[5, 2, 3]} fontSize={0.8} color={[3.0, 3.0, 4.0]} material-toneMapped={false} transparent opacity={0.9}>THROW()</Text>
-          <Text position={[-4, -3, -2]} fontSize={1.2} color={[4.0, 1.0, 3.0]} material-toneMapped={false} transparent opacity={0.8}>0xEA</Text>
-          <Text position={[3, -2, -6]} fontSize={0.6} color={[1.0, 4.0, 4.0]} material-toneMapped={false} transparent opacity={0.9}>[42]</Text>
-          <Text position={[-6, 3, 2]} fontSize={1.0} color={[2.5, 1.5, 4.0]} material-toneMapped={false} transparent opacity={0.8}>GALAXY</Text>
+          <Text position={[6, 3, 4]} fontSize={1.0} color={[3.0, 3.0, 4.0]} material-toneMapped={false} transparent opacity={0.9}>THROW()</Text>
+          <Text position={[-5, -4, -3]} fontSize={1.5} color={[4.0, 1.0, 3.0]} material-toneMapped={false} transparent opacity={0.8}>0xEA</Text>
+          <Text position={[4, -3, -8]} fontSize={0.8} color={[1.0, 4.0, 4.0]} material-toneMapped={false} transparent opacity={0.9}>[42]</Text>
+          <Text position={[-8, 4, 3]} fontSize={1.2} color={[2.5, 1.5, 4.0]} material-toneMapped={false} transparent opacity={0.8}>GALAXY</Text>
       </group>
       
-      {/* Intense core to anchor it, flashes and fades into Web */}
+      {/* Intense core to anchor it */}
       <mesh>
-          <sphereGeometry args={[0.6, 32, 32]} />
-          <meshBasicMaterial color={[4.0, 4.0, 4.0]} toneMapped={false} transparent opacity={0.9} blending={THREE.AdditiveBlending}/>
-      </mesh>
-      <mesh>
-          <sphereGeometry args={[1.2, 32, 32]} />
-          <meshBasicMaterial color={[3.0, 0.5, 4.0]} toneMapped={false} transparent opacity={0.4} blending={THREE.AdditiveBlending} depthWrite={false} />
+          <sphereGeometry args={[0.8, 32, 32]} />
+          <meshBasicMaterial color={[4.0, 4.0, 4.0]} toneMapped={false} transparent opacity={0.6} blending={THREE.AdditiveBlending}/>
       </mesh>
     </group>
   );
