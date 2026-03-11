@@ -15,7 +15,7 @@ export const initializeHandLandmarker = async () => {
       delegate: "GPU"
     },
     runningMode: "VIDEO",
-    numHands: 1,
+    numHands: 2,
   });
 
   return handLandmarker;
