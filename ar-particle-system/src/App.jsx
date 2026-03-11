@@ -55,10 +55,10 @@ function App() {
           // Index finger tip is 8, Thumb tip is 4
           const indexFinger = landmarks[8];
           const thumb = landmarks[4];
-          
+
           handPosRef.current = {
             indexFinger: { x: indexFinger.x, y: indexFinger.y, z: indexFinger.z },
-            thumb:       { x: thumb.x, y: thumb.y, z: thumb.z }
+            thumb: { x: thumb.x, y: thumb.y, z: thumb.z }
           };
         } else {
           handPosRef.current = null;
@@ -72,7 +72,7 @@ function App() {
   return (
     <div className="ar-container">
       {!isReady && <div className="loading-overlay">Initializing AR Engine...</div>}
-      
+
       {/* Webcam Feed */}
       <video
         ref={videoRef}
@@ -85,12 +85,12 @@ function App() {
       {/* 3D Overlay */}
       <div className="canvas-container">
         <Canvas camera={{ position: [0, 0, 5], fov: 75 }}>
-          <color attach="background" args={['transparent']} />
+
           <ambientLight intensity={0.5} />
-          
+
           <ParticleSystem handPosRef={handPosRef} />
           <Effects />
-          
+
         </Canvas>
       </div>
     </div>
