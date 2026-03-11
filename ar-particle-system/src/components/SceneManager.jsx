@@ -27,9 +27,7 @@ export const SceneManager = ({ handsRef }) => {
       galaxyPosition: [0,0,0],
       
       // Tracking for the Throw trigger
-      throwingHandZ: null,
-      throwVelocity: 0,
-      framesSinceDrop: 0,
+      referenceZ: null,
       activeThrowHand: null // "Left" or "Right"
   });
 
@@ -59,79 +57,68 @@ export const SceneManager = ({ handsRef }) => {
              s.phase = PHASES.CHARGE;
              s.chargePosition = [ (lPos[0]+rPos[0])/2, (lPos[1]+rPos[1])/2, 0 ];
              
-             // Reset throw tracking
-             s.throwingHandZ = null;
-             s.throwVelocity = 0;
-             s.framesSinceDrop = 0;
+             // Set persistent reference depth upon merging
+             s.referenceZ = (lRawZ + rRawZ) / 2;
              s.activeThrowHand = null;
            }
         }
     } 
     else if (s.phase === PHASES.CHARGE) {
-        // Did they pull hands apart to cancel?
+        let currentZ = null;
+
+        // Verify hands are still somewhat together, or at least one hand is visible
         if (lPos && rPos) {
            const dx = lPos[0] - rPos[0];
            const dy = lPos[1] - rPos[1];
            const dist = Math.sqrt(dx*dx + dy*dy);
            if (dist > 3.5) {
-               s.phase = PHASES.SUMMON; // Cancel charge
-           } else {
-               // Update charge pos
-               s.chargePosition = [ (lPos[0]+rPos[0])/2, (lPos[1]+rPos[1])/2, 0 ];
+               s.phase = PHASES.SUMMON; // Pulled apart, cancel charge
+               return;
            }
-        } 
-        // Did they drop one hand to initiate the throw?
-        else if ((lPos && !rPos) || (!lPos && rPos)) {
-           // We are beginning to monitor for a rapid forward Z shift
-           s.framesSinceDrop++;
-           
-           // We only give them ~60 frames (1 second) to complete the throw after dropping a hand
-           if (s.framesSinceDrop > 60) {
-               s.phase = PHASES.SUMMON; // Reset if too slow
-           } else {
-               s.activeThrowHand = lPos ? "Left" : "Right";
-               const currentZ = lPos ? lRawZ : rRawZ;
-               
-               if (s.throwingHandZ !== null) {
-                   // Calculate delta Z
-                   // MediaPipe Z: Smaller negative numbers mean closer to camera.
-                   // A rapid push forward means Z becomes more negative very fast.
-                   const deltaZ = currentZ - s.throwingHandZ;
-                   s.throwVelocity = deltaZ; 
-                   
-                   // Threshold: if they push forward fast enough
-                   // e.g., deltaZ < -0.01 in a single frame
-                   if (deltaZ < -0.015) {
-                       // TRANSITION: Charge -> Throw -> Galaxy
-                       s.phase = PHASES.GALAXY;
-                       // Detonate at the current single hand position
-                       const throwPos = lPos ? lPos : rPos;
-                       s.galaxyPosition = [throwPos[0], throwPos[1], 0];
-                       // Mark spawn time for animations
-                       if (galaxyGroupRef.current) {
-                           galaxyGroupRef.current.userData.spawnTime = performance.now();
-                       }
-                   }
-               }
-               s.throwingHandZ = currentZ;
-           }
-        } 
-        // They dropped both hands
-        else {
-             s.phase = PHASES.SUMMON; 
+           // Keep position locked between hands
+           s.chargePosition = [ (lPos[0]+rPos[0])/2, (lPos[1]+rPos[1])/2, 0 ];
+           currentZ = (lRawZ + rRawZ) / 2;
+        } else if (lPos || rPos) {
+           // One hand dropped, use the remaining hand
+           currentZ = lPos ? lRawZ : rRawZ;
+        } else {
+           // Both hands lost
+           s.phase = PHASES.SUMMON; 
+           return;
+        }
+
+        // PUSH DETECTION: Calculate delta from reference depth
+        if (currentZ !== null && s.referenceZ !== null) {
+            const deltaZ = currentZ - s.referenceZ;
+            
+            // Aggressive Trigger: smaller negative numbers mean closer to camera in our setup.
+            // A delta of -0.015 is extremely sensitive and triggers immediately on a push.
+            if (deltaZ < -0.015) {
+                 // TRANSITION: Charge -> Galaxy
+                 s.phase = PHASES.GALAXY;
+                 
+                 // Detonate exactly on the target (Merged Core's last position)
+                 s.galaxyPosition = [...s.chargePosition];
+                 s.activeThrowHand = lPos ? "Left" : "Right";
+                 
+                 if (galaxyGroupRef.current) {
+                     galaxyGroupRef.current.userData.spawnTime = performance.now();
+                 }
+            } else if (deltaZ > 0.03) {
+                 // If the user pulls their hand backward, update the reference Z 
+                 // so they can push forward again without having to reset to Summon.
+                 s.referenceZ = currentZ;
+            }
         }
     }
     else if (s.phase === PHASES.GALAXY) {
-       // Only remain in GALAXY as long as the throwing hand is visible
-       const isThrowingHandVisible = (s.activeThrowHand === "Left" && lPos) || (s.activeThrowHand === "Right" && rPos);
+       // Remain in GALAXY as long as a hand is visible
+       const isHandVisible = !!(left || right);
        
-       if (!isThrowingHandVisible) {
+       if (!isHandVisible) {
            s.phase = PHASES.SUMMON;
-       } else {
-           // Track the hand to move the galaxy center slightly
-           const throwPos = lPos ? lPos : rPos;
-           s.galaxyPosition = [throwPos[0], throwPos[1], 0];
        }
+       // Don't update s.galaxyPosition! It should stay fixed where it detonated.
     }
 
 
