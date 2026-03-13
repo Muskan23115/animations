@@ -7,24 +7,25 @@ export const MergedCore = ({ parentRef }) => {
   const ringRef = useRef();
   const particleCount = 2500;
 
-  // Set up swirling core particles
+  // Set up scattered purple/pink square particles
   const [positions, colors] = useMemo(() => {
     const pos = new Float32Array(particleCount * 3);
     const col = new Float32Array(particleCount * 3);
     
-    // Deep purple and magenta palette
+    // Deep purple, magenta, and pink palette
     const colorChoices = [
       new THREE.Color('#8800ff').multiplyScalar(1.5), // Deep Purple
       new THREE.Color('#ff00aa').multiplyScalar(1.5), // Magenta
-      new THREE.Color('#ff00ff').multiplyScalar(2.0), // Bright Pink (hot core)
+      new THREE.Color('#ff00ff').multiplyScalar(2.0), // Bright Pink
+      new THREE.Color('#aa00ff').multiplyScalar(1.8), // Purple
     ];
 
     for (let i = 0; i < particleCount; i++) {
-      // Initialize in a dense cluster
+      // Scattered cloud around the core
       const theta = Math.random() * Math.PI * 2;
       const phi = Math.acos((Math.random() * 2) - 1);
-      // Bias towards center for density
-      const r = Math.pow(Math.random(), 2.0) * 1.5; 
+      // Bias towards outer areas for scattered effect
+      const r = Math.pow(Math.random(), 0.5) * 2.0; 
       
       pos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
       pos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
@@ -43,47 +44,57 @@ export const MergedCore = ({ parentRef }) => {
     
     const t = state.clock.getElapsedTime();
     
-    // Rotate core rapidly
+    // Animate scattered particles
     if (pointsRef.current) {
-        pointsRef.current.rotation.y = t * 1.5;
-        pointsRef.current.rotation.x = t * 0.8;
-        pointsRef.current.rotation.z = Math.sin(t) * 0.5;
+        pointsRef.current.rotation.y = t * 0.5;
+        pointsRef.current.rotation.x = t * 0.3;
+        pointsRef.current.rotation.z = t * 0.7;
 
-        // Make the particles vibrate violently (unstable energy)
+        // Gentle floating motion for scattered particles
         const arr = pointsRef.current.geometry.attributes.position.array;
         for (let i = 0; i < particleCount; i++) {
             const i3 = i * 3;
-            // Wobble
-            arr[i3] += (Math.random() - 0.5) * 0.05;
-            arr[i3 + 1] += (Math.random() - 0.5) * 0.05;
-            arr[i3 + 2] += (Math.random() - 0.5) * 0.05;
+            // Subtle wobble
+            arr[i3] += (Math.random() - 0.5) * 0.02;
+            arr[i3 + 1] += (Math.random() - 0.5) * 0.02;
+            arr[i3 + 2] += (Math.random() - 0.5) * 0.02;
             
-            // Constrain back to sphere if they wander too far
+            // Allow particles to drift further for scattered effect
             const x = arr[i3], y = arr[i3+1], z = arr[i3+2];
             const dist = Math.sqrt(x*x + y*y + z*z);
-            if (dist > 1.8) {
+            if (dist > 2.5) {
                 const nx = x/dist, ny = y/dist, nz = z/dist;
-                arr[i3] = nx * 1.5;
-                arr[i3+1] = ny * 1.5;
-                arr[i3+2] = nz * 1.5;
+                arr[i3] = nx * 2.0;
+                arr[i3+1] = ny * 2.0;
+                arr[i3+2] = nz * 2.0;
             }
         }
         pointsRef.current.geometry.attributes.position.needsUpdate = true;
     }
 
-    // Unstable binding rings
+    // Bright white/pink intersecting orbital rings
     if (ringRef.current) {
-        ringRef.current.rotation.x = t * 2.0;
-        ringRef.current.rotation.y = t * -3.0;
-        // Pulse ring scale slightly
-        const s = 1.0 + Math.sin(t * 10.0) * 0.1;
+        ringRef.current.rotation.x = t * 1.0;
+        ringRef.current.rotation.y = t * -1.5;
+        // Subtle pulsing
+        const s = 1.0 + Math.sin(t * 8.0) * 0.05;
         ringRef.current.scale.set(s,s,s);
     }
   });
 
   return (
     <group>
-      {/* Central swirling unstable particle core */}
+      {/* Dense glowing lavender/magenta spherical core */}
+      <mesh>
+        <sphereGeometry args={[0.9, 32, 32]} />
+        <meshBasicMaterial color="#cc00ff" transparent opacity={0.8} blending={THREE.AdditiveBlending} depthWrite={false} />
+      </mesh>
+      <mesh>
+        <sphereGeometry args={[1.1, 32, 32]} />
+        <meshBasicMaterial color="#aa00cc" transparent opacity={0.4} blending={THREE.AdditiveBlending} depthWrite={false} />
+      </mesh>
+
+      {/* Scattered purple/pink square particles */}
       <points ref={pointsRef}>
         <bufferGeometry>
             <bufferAttribute
@@ -100,37 +111,31 @@ export const MergedCore = ({ parentRef }) => {
             />
         </bufferGeometry>
         <pointsMaterial
-            size={0.06}
+            size={0.08}
             vertexColors={true}
             transparent={true}
-            opacity={0.8}
+            opacity={0.9}
             blending={THREE.AdditiveBlending}
             depthWrite={false}
             toneMapped={false}
         />
       </points>
 
-      {/* Binding Rings trying to contain the energy */}
+      {/* Distinct intersecting bright white/pink orbital rings */}
       <group ref={ringRef}>
           <mesh rotation={[Math.PI/2, 0, 0]}>
-              <torusGeometry args={[1.6, 0.02, 16, 64]} />
-              <meshBasicMaterial color={[1.0, 0.2, 2.0]} toneMapped={false} transparent opacity={0.6} blending={THREE.AdditiveBlending} />
+              <torusGeometry args={[1.8, 0.03, 16, 64]} />
+              <meshBasicMaterial color={[3.0, 1.0, 3.0]} toneMapped={false} transparent opacity={0.8} blending={THREE.AdditiveBlending} />
           </mesh>
           <mesh rotation={[0, Math.PI/2, 0]}>
-              <torusGeometry args={[1.7, 0.01, 16, 64]} />
-              <meshBasicMaterial color={[2.0, 0.2, 1.0]} toneMapped={false} transparent opacity={0.8} blending={THREE.AdditiveBlending} />
+              <torusGeometry args={[2.0, 0.02, 16, 64]} />
+              <meshBasicMaterial color={[3.0, 2.0, 3.0]} toneMapped={false} transparent opacity={0.9} blending={THREE.AdditiveBlending} />
           </mesh>
           <mesh rotation={[Math.PI/4, Math.PI/4, 0]}>
-              <torusGeometry args={[1.8, 0.03, 16, 64]} />
-              <meshBasicMaterial color={[3.0, 3.0, 3.0]} toneMapped={false} transparent opacity={0.4} blending={THREE.AdditiveBlending} />
+              <torusGeometry args={[2.2, 0.025, 16, 64]} />
+              <meshBasicMaterial color={[4.0, 4.0, 4.0]} toneMapped={false} transparent opacity={0.6} blending={THREE.AdditiveBlending} />
           </mesh>
       </group>
-
-      {/* Intense center glow */}
-      <mesh>
-        <sphereGeometry args={[0.8, 32, 32]} />
-        <meshBasicMaterial color={[2.0, 0.5, 3.0]} toneMapped={false} transparent opacity={0.3} blending={THREE.AdditiveBlending} depthWrite={false} />
-      </mesh>
     </group>
   );
 };

@@ -24,7 +24,7 @@ export const StructuredGalaxy = ({ parentRef }) => {
       new THREE.Color(4.0, 1.0, 4.0)  // Emissive magenta
     ];
 
-    const numBranches = 12; // Starburst/lightning arms
+    const numArms = 4; // 4 main spiral arms like Milky Way
     for (let i = 0; i < streakCount; i++) {
         // --- START STATE (Dense Sphere, matches Merged Core) ---
         const sTheta = Math.random() * Math.PI * 2;
@@ -34,17 +34,25 @@ export const StructuredGalaxy = ({ parentRef }) => {
         starts[i*3+1] = sR * Math.sin(sPhi) * Math.sin(sTheta);
         starts[i*3+2] = sR * Math.cos(sPhi);
 
-        // --- TARGET STATE (Structured Galaxy Web) ---
-        const branchIdx = i % numBranches;
-        const branchAngle = (Math.PI * 2 / numBranches) * branchIdx;
-        const r = Math.pow(Math.random(), 1.5) * 8.0; 
+        // --- TARGET STATE (Logarithmic Spiral Galaxy) ---
+        const armIndex = i % numArms;
+        const baseAngle = (Math.PI * 2 / numArms) * armIndex;
         
-        const jitter = Math.max(0.1, r * 0.25);
-        const jx = (Math.random() - 0.5) * jitter * 2;
-        const jy = (Math.random() - 0.5) * Math.max(0.2, 2.0 - r*0.2) * 2;
-        const jz = (Math.random() - 0.5) * jitter * 2;
+        // Logarithmic spiral: r = a * e^(b * theta)
+        const a = 0.5; // Initial radius
+        const b = 0.3; // Spiral tightness
         
-        const theta = branchAngle + r * 0.15;
+        // Vary theta for points along the arm
+        const thetaOffset = (Math.random() - 0.5) * Math.PI * 0.5; // Spread along arm
+        const theta = baseAngle + thetaOffset + Math.random() * Math.PI * 4; // Multiple windings
+        
+        const r = a * Math.exp(b * theta);
+        
+        // Add some jitter for natural look
+        const jitter = 0.3;
+        const jx = (Math.random() - 0.5) * jitter;
+        const jy = (Math.random() - 0.5) * jitter * 0.5; // Less vertical spread
+        const jz = (Math.random() - 0.5) * jitter;
         
         tgt[i*3] = Math.cos(theta) * r + jx;
         tgt[i*3+1] = jy; 
@@ -58,6 +66,7 @@ export const StructuredGalaxy = ({ parentRef }) => {
 
   // Mutable positions that lerp
   const streakPos = useMemo(() => new Float32Array(streakCount * 3), []);
+  const velocities = useMemo(() => new Float32Array(streakCount * 3), []);
 
   const ringGeo = useMemo(() => {
      return [
@@ -82,35 +91,61 @@ export const StructuredGalaxy = ({ parentRef }) => {
         parentRef.current.scale.lerp(new THREE.Vector3(20, 20, 20), 0.05);
     }
 
-    // --- 2. SCATTER THE PARTICLES (Sphere -> Galaxy Lerp) ---
+    // --- 2. EXPLOSION PHYSICS & GALAXY FORMATION ---
     if (streaksRef.current) {
         const arr = streaksRef.current.geometry.attributes.position.array;
         
-        // Reset positions exactly when spawned
+        // Reset positions and apply explosion velocity when spawned
         if (streaksRef.current.userData.lastSpawn !== spawnTime) {
             streaksRef.current.userData.lastSpawn = spawnTime;
-            for(let i=0; i<arr.length; i++) arr[i] = sphereStarts[i];
+            for(let i=0; i<streakCount; i++) {
+                const i3 = i * 3;
+                // Start from sphere center
+                arr[i3] = 0;
+                arr[i3+1] = 0;
+                arr[i3+2] = 0;
+                
+                // Massive outward radial velocity
+                const explosionSpeed = 8.0 + Math.random() * 12.0;
+                const dirX = (Math.random() - 0.5) * 2;
+                const dirY = (Math.random() - 0.5) * 2;
+                const dirZ = (Math.random() - 0.5) * 2;
+                const length = Math.sqrt(dirX*dirX + dirY*dirY + dirZ*dirZ);
+                velocities[i3] = (dirX / length) * explosionSpeed;
+                velocities[i3+1] = (dirY / length) * explosionSpeed;
+                velocities[i3+2] = (dirZ / length) * explosionSpeed;
+            }
         }
 
-        // Interpolation factor (0 to 1 over first second)
-        const lerpFactor = Math.min(1.0, elapsed * 1.5);
-        
         for (let i = 0; i < streakCount; i++) {
             const i3 = i * 3;
-            // Morph from dense sphere starts toward structured galaxy targets
-            const targetX = THREE.MathUtils.lerp(sphereStarts[i3], galaxyTargets[i3], lerpFactor);
-            const targetY = THREE.MathUtils.lerp(sphereStarts[i3+1], galaxyTargets[i3+1], lerpFactor);
-            const targetZ = THREE.MathUtils.lerp(sphereStarts[i3+2], galaxyTargets[i3+2], lerpFactor);
             
-            // Add alive wobble
-            const wx = Math.sin(elapsed * 2.0 + i) * 0.05;
-            const wy = Math.cos(elapsed * 1.5 + i) * 0.05;
-            const wz = Math.sin(elapsed * 1.8 + i) * 0.05;
+            if (elapsed < 2.0) {
+                // Phase 1: Explosion outward with heavy friction
+                arr[i3] += velocities[i3];
+                arr[i3+1] += velocities[i3+1];
+                arr[i3+2] += velocities[i3+2];
+                
+                // Heavy drag/friction
+                velocities[i3] *= 0.92;
+                velocities[i3+1] *= 0.92;
+                velocities[i3+2] *= 0.92;
+            } else {
+                // Phase 2: Form into logarithmic spiral galaxy
+                const targetX = galaxyTargets[i3];
+                const targetY = galaxyTargets[i3+1];
+                const targetZ = galaxyTargets[i3+2];
+                
+                // Sine-wave wobble for alive look
+                const wx = Math.sin(elapsed * 3.0 + i * 0.1) * 0.02;
+                const wy = Math.cos(elapsed * 2.5 + i * 0.1) * 0.02;
+                const wz = Math.sin(elapsed * 2.0 + i * 0.1) * 0.02;
 
-            // Apply spring logic to smoothly hit the moving target
-            arr[i3] += (targetX + wx - arr[i3]) * 0.1;
-            arr[i3+1] += (targetY + wy - arr[i3+1]) * 0.1;
-            arr[i3+2] += (targetZ + wz - arr[i3+2]) * 0.1;
+                // Spring toward spiral targets
+                arr[i3] += (targetX + wx - arr[i3]) * 0.05;
+                arr[i3+1] += (targetY + wy - arr[i3+1]) * 0.05;
+                arr[i3+2] += (targetZ + wz - arr[i3+2]) * 0.05;
+            }
         }
         streaksRef.current.geometry.attributes.position.needsUpdate = true;
     }

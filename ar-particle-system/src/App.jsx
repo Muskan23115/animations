@@ -47,31 +47,24 @@ function App() {
   const startTracking = () => {
     const track = () => {
       if (videoRef.current && videoRef.current.readyState >= 2) {
-        const results = detectHands(videoRef.current);
+        const hands = detectHands(videoRef.current);
         
         handsRef.current = { left: null, right: null };
 
-        if (results && results.landmarks && results.landmarks.length > 0) {
-          results.landmarks.forEach((landmarks, index) => {
-             // MediaPipe returns Left/Right classification
-             const handedness = results.handednesses[index][0].categoryName;
-             
-             // We use landmark 9 (middle finger base) as the center of the hand
-             const pt = landmarks[9];
-             
-             // Since the video is horizontally flipped in CSS (scaleX(-1)),
-             // we need to mirror the X coordinate for our 3D logic to line up visually.
-             // MediaPipe x=0 means physical left side of image. If we mirror the video,
-             // physical left side is rendered on the right side of the screen.
-             // Therefore: real visual X = 1 - pt.x
-             // We also shift back by 0.5 to put (0,0) in the center of the screen
-             const normX = (1 - pt.x) - 0.5;
-             const normY = -(pt.y - 0.5);
-             
-             // MediaPipe mirroring quirk: Usually front-facing cameras cause "Left" hand to report as "Right"
-             // But we just want two separate hands, so we map them directly.
-             if (handedness === "Left") handsRef.current.left = { x: normX, y: normY, z: pt.z };
-             else handsRef.current.right = { x: normX, y: normY, z: pt.z };
+        if (hands && hands.length > 0) {
+          hands.forEach((hand) => {
+            const handData = {
+              x: hand.position.x,
+              y: hand.position.y,
+              z: hand.position.z,
+              gesture: hand.gesture
+            };
+            
+            if (hand.handedness === 'left') {
+              handsRef.current.left = handData;
+            } else if (hand.handedness === 'right') {
+              handsRef.current.right = handData;
+            }
           });
         }
       }
